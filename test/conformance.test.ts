@@ -31,6 +31,10 @@ function writeGraph(staged: { src: string }, name: string, source: string): void
   writeFileSync(path.join(staged.src, name), source);
 }
 
+function countOf(text: string, fragment: string): number {
+  return text.split(fragment).length - 1;
+}
+
 function requireDiagnostic(result: CompileResult, code: CompileResult['diagnostics'][number]['code'], nodeId?: string) {
   const diagnostic = result.diagnostics.find((item) => item.code === code && (nodeId === undefined || item.nodeId === nodeId));
   assert.ok(
@@ -56,8 +60,8 @@ test('a typed object flows through a join and the shared call runs once', async 
   assert.match(generated, /if \(expedited\) \{/);
   assert.match(generated, /noteExpedited\(normalized\);/);
   assert.match(generated, /noteStandard\(normalized\);/);
-  assert.match(generated, /receiptFor\(normalized, expedited\)/);
-  assert.match(generated, /return receipt;/);
+  assert.equal(countOf(generated, 'receiptFor('), 1);
+  assert.equal(countOf(generated, 'return receipt;'), 1);
   assert.equal(generated.includes('while ('), false);
   assert.equal(generated.includes('switch ('), false);
 

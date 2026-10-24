@@ -348,7 +348,7 @@ The Milestone 1 conformance render uses Mermaid **12.2.0**.
 A diagnostic has the form `CODE file:line [nodeId]: message`. The node id is omitted when the error is not tied to a node. Initial codes:
 
 - `SW010`–`SW015`: syntax and declarations.
-- `SW101`–`SW109`: graph structure. `SW104` is a missing `true` or `false` edge. `SW108` is a cycle in the flowchart.
+- `SW101`–`SW109`: graph structure. `SW104` is a missing `true` or `false` edge. `SW108` is a cycle in the flowchart. `SW103` means structured emission still had to duplicate a region and stopped after 2,000 nodes.
 - `SW203`: a reference that does not dominate the use.
 - `SW301`: a decision return type that fails the boolean rule.
 - `SW302`: a return value not assignable to the declared return type.
@@ -358,16 +358,17 @@ A diagnostic has the form `CODE file:line [nodeId]: message`. The node id is omi
 
 There is no compiler-stage Mermaid or DOM failure code. A file that is not in the supported subset fails with a syntax diagnostic. Rendering failures are reported by the conformance test.
 
-### 13.7 Prototype limitations
+### 13.7 Code generation for joins
 
-These are limitations of this prototype, not language requirements:
+The emitter computes immediate postdominators on the flowchart, with a synthetic exit after every return. For a decision, the nodes that appear on only one side are emitted inside `if` / `else`. The immediate postdominator is emitted once after the conditional. A decision whose true and false edges already target that postdominator emits the predicate call and then the continuation, with no empty conditional. Sequential diamonds and diamonds nested inside one arm therefore grow linearly. Call order and side effects follow the taken path.
 
-- Joins may be emitted by duplicating the shared tail inside each branch. Only the taken branch runs. A later emitter may structure the same graph differently when the observable call order and results stay the same.
-- The emitter stops if expansion would exceed 2,000 nodes. That guard prevents a pathological diagram from emitting exponential code. It is not a limit on valid Seawitch graphs.
+Some acyclic graphs have no single continuation for a decision. The smallest case is two decisions that cross into the same pair of successors: the true arm of the outer decision reaches one successor, and the inner decision reaches both. Neither successor postdominates the outer decision, so each successor is emitted on every path that reaches it. Only the taken copy runs. That duplication is the fallback. It is not a branch-merge value and it does not relax dominance.
+
+If that fallback would emit more than 2,000 nodes, compilation stops with `SW103` and writes nothing. A cascade of crossing decisions can reach that guard from a small diagram. Ordinary sequential and nested diamonds do not. The guard is a prototype limit on duplicated regions, not a limit on graphs the language accepts.
 
 ### 13.8 Converging example
 
-`examples/order/fulfillOrder.sea.mmd` is a non-clinical function with a structured input, intermediate call results, a boolean decision, a converging path, and a structured output. The shared call may use values that dominate the join, including the decision's boolean result. A branch-local result is not a legal argument to that shared call. The source remains ordinary Mermaid. Duplicating the shared tail in the generated TypeScript is a prototype technique; it is not the language rule for joins.
+`examples/order/fulfillOrder.sea.mmd` is a non-clinical function with a structured input, intermediate call results, a boolean decision, a converging path, and a structured output. The shared call may use values that dominate the join, including the decision's boolean result. A branch-local result is not a legal argument to that shared call. The source remains ordinary Mermaid. The generated function emits the shared call once, after the conditional.
 
 ---
 

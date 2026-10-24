@@ -2,8 +2,10 @@ import path from 'node:path';
 import type { Diagnostic } from '../diagnostics.js';
 import type { Expr, Graph, GraphNode, MappedSpan } from '../ir.js';
 import { rewriteSpecifier } from '../resolve/imports.js';
+import { EXIT, immediatePostdominators } from './postdominators.js';
 
-// Duplicated tails and this cap are prototype limitations, not language rules.
+// Graphs that are not single-entry joins still duplicate the unsplittable region.
+// The cap bounds that fallback. It is not a limit on ordinary diamonds.
 const EXPANSION_LIMIT = 2000;
 
 export type EmittedFile = {
@@ -63,7 +65,7 @@ export function emitGraph(
       },
     };
   }
-  const emitted = emitNode(startEdge.to, 2, printer, graph, nodes, referenced);
+  const emitted = emitUntil(startEdge.to, EXIT, 2, printer, graph, nodes, referenced, immediatePostdominators(graph));
   if (emitted) {
     return { diagnostic: emitted };
   }
@@ -79,102 +81,121 @@ export function emitGraph(
   };
 }
 
-function emitNode(
+function emitUntil(
   id: string,
+  stop: string,
   indent: number,
   printer: Printer,
   graph: Graph,
   nodes: Map<string, GraphNode>,
   referenced: Set<string>,
+  ipdom: Map<string, string>,
 ): Diagnostic | undefined {
-  printer.expansions += 1;
-  if (printer.expansions > EXPANSION_LIMIT) {
-    return {
-      code: 'SW103',
-      file: graph.displayFile,
-      line: nodes.get(id)?.loc.line ?? 1,
-      nodeId: id,
-      message:
-        'Prototype expansion guard stopped emission after 2000 nodes. This is a prototype limitation, not a language rule.',
-    };
-  }
-  const node = nodes.get(id);
-  if (!node) {
-    return {
-      code: 'SW101',
-      file: graph.displayFile,
-      line: 1,
-      message: `Missing node '${id}'.`,
-    };
-  }
-  if (node.kind === 'return') {
-    const expression = printExpr(node.value);
-    const statement = `return ${expression}`;
-    const prefix = ' '.repeat(indent);
-    const start = printer.length + prefix.length;
-    printer.write(`${prefix}${statement};\n`);
-    printer.spans.push({
-      role: 'return',
-      start,
-      end: start + statement.length,
-      line: node.loc.line,
-      nodeId: node.id,
-    });
-    return undefined;
-  }
-  if (node.kind === 'call') {
+  let cursor = id;
+  while (cursor !== stop) {
+    printer.expansions += 1;
+    if (printer.expansions > EXPANSION_LIMIT) {
+      const node = nodes.get(cursor);
+      return {
+        code: 'SW103',
+        file: graph.displayFile,
+        line: node?.loc.line ?? 1,
+        nodeId: cursor,
+        message:
+          'Structured emission duplicated a region that is not a postdominator join and stopped after 2000 nodes. This is a prototype limitation, not a language rule.',
+      };
+    }
+    const node = nodes.get(cursor);
+    if (!node) {
+      return {
+        code: 'SW101',
+        file: graph.displayFile,
+        line: 1,
+        message: `Missing node '${cursor}'.`,
+      };
+    }
+    if (node.kind === 'return') {
+      const expression = printExpr(node.value);
+      const statement = `return ${expression}`;
+      const prefix = ' '.repeat(indent);
+      const start = printer.length + prefix.length;
+      printer.write(`${prefix}${statement};\n`);
+      printer.spans.push({
+        role: 'return',
+        start,
+        end: start + statement.length,
+        line: node.loc.line,
+        nodeId: node.id,
+      });
+      return undefined;
+    }
+    if (node.kind === 'call') {
+      const call = printCall(node.callee, node.args);
+      recordCall(printer, indent, node, call, referenced.has(node.id), 'call');
+      const next = graph.edges.find((edge) => edge.from === node.id);
+      if (!next) {
+        return undefined;
+      }
+      cursor = next.to;
+      continue;
+    }
+    if (node.kind !== 'decision') {
+      return {
+        code: 'SW101',
+        file: graph.displayFile,
+        line: node.loc.line,
+        nodeId: node.id,
+        message: `Cannot emit node '${node.id}'.`,
+      };
+    }
+    const join = ipdom.get(node.id);
+    const trueEdge = graph.edges.find((edge) => edge.from === node.id && edge.label === 'true');
+    const falseEdge = graph.edges.find((edge) => edge.from === node.id && edge.label === 'false');
+    if (!join || !trueEdge || !falseEdge) {
+      return {
+        code: 'SW104',
+        file: graph.displayFile,
+        line: node.loc.line,
+        nodeId: node.id,
+        message: "A decision must have a 'true' edge and a 'false' edge.",
+      };
+    }
     const call = printCall(node.callee, node.args);
-    recordCall(printer, indent, node, call, referenced.has(node.id), 'call');
-    const next = graph.edges.find((edge) => edge.from === node.id);
-    return next ? emitNode(next.to, indent, printer, graph, nodes, referenced) : undefined;
+    if (trueEdge.to === join && falseEdge.to === join) {
+      recordCall(printer, indent, node, call, referenced.has(node.id), 'decision');
+    } else {
+      const condition = referenced.has(node.id) ? node.id : call;
+      if (referenced.has(node.id)) {
+        recordCall(printer, indent, node, call, true, 'decision');
+      }
+      const conditionPrefix = `${' '.repeat(indent)}if (`;
+      const conditionStart = printer.length + conditionPrefix.length;
+      printer.write(`${conditionPrefix}${condition}) {\n`);
+      if (!referenced.has(node.id)) {
+        printer.spans.push({
+          role: 'decision',
+          start: conditionStart,
+          end: conditionStart + call.length,
+          line: node.loc.line,
+          nodeId: node.id,
+        });
+      }
+      const trueError = emitUntil(trueEdge.to, join, indent + 2, printer, graph, nodes, referenced, ipdom);
+      if (trueError) {
+        return trueError;
+      }
+      printer.write(`${' '.repeat(indent)}} else {\n`);
+      const falseError = emitUntil(falseEdge.to, join, indent + 2, printer, graph, nodes, referenced, ipdom);
+      if (falseError) {
+        return falseError;
+      }
+      printer.write(`${' '.repeat(indent)}}\n`);
+    }
+    if (join === EXIT) {
+      return undefined;
+    }
+    cursor = join;
   }
-  if (node.kind !== 'decision') {
-    return {
-      code: 'SW101',
-      file: graph.displayFile,
-      line: node.loc.line,
-      nodeId: node.id,
-      message: `Cannot emit node '${node.id}'.`,
-    };
-  }
-  const call = printCall(node.callee, node.args);
-  const condition = referenced.has(node.id) ? node.id : call;
-  if (referenced.has(node.id)) {
-    recordCall(printer, indent, node, call, true, 'decision');
-  }
-  const trueEdge = graph.edges.find((edge) => edge.from === node.id && edge.label === 'true');
-  const falseEdge = graph.edges.find((edge) => edge.from === node.id && edge.label === 'false');
-  if (!trueEdge || !falseEdge) {
-    return {
-      code: 'SW104',
-      file: graph.displayFile,
-      line: node.loc.line,
-      nodeId: node.id,
-      message: "A decision must have a 'true' edge and a 'false' edge.",
-    };
-  }
-  const conditionPrefix = `${' '.repeat(indent)}if (`;
-  const conditionStart = printer.length + conditionPrefix.length;
-  printer.write(`${conditionPrefix}${condition}) {\n`);
-  if (!referenced.has(node.id)) {
-    printer.spans.push({
-      role: 'decision',
-      start: conditionStart,
-      end: conditionStart + call.length,
-      line: node.loc.line,
-      nodeId: node.id,
-    });
-  }
-  const trueError = emitNode(trueEdge.to, indent + 2, printer, graph, nodes, referenced);
-  if (trueError) {
-    return trueError;
-  }
-  printer.write(`${' '.repeat(indent)}} else {\n`);
-  const falseError = emitNode(falseEdge.to, indent + 2, printer, graph, nodes, referenced);
-  if (falseError) {
-    return falseError;
-  }
-  printer.write(`${' '.repeat(indent)}}\n`);
   return undefined;
 }
 

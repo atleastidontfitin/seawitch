@@ -138,11 +138,12 @@ export function validateGraph(graph: Graph): Validation {
   }
 
   if (!diagnostics.some((diagnostic) => diagnostic.code === 'SW108')) {
+    const returns = pathsReachingReturn(graph, nodes);
     for (const node of graph.nodes) {
       if (!reachable.has(node.id) || node.kind === 'return') {
         continue;
       }
-      if (!pathReachesReturn(node.id, graph, nodes, new Set())) {
+      if (!returns.get(node.id)) {
         diagnostics.push({
           code: 'SW107',
           file: graph.displayFile,
@@ -243,21 +244,43 @@ function reachableFromStart(graph: Graph): Set<string> {
   return seen;
 }
 
-function pathReachesReturn(id: string, graph: Graph, nodes: Map<string, GraphNode>, stack: Set<string>): boolean {
-  const node = nodes.get(id);
-  if (!node || stack.has(id)) {
-    return false;
+function pathsReachingReturn(graph: Graph, nodes: Map<string, GraphNode>): Map<string, boolean> {
+  const state = new Map<string, 'visiting' | boolean>();
+  const visit = (id: string): boolean => {
+    const known = state.get(id);
+    if (known === true || known === false) {
+      return known;
+    }
+    if (known === 'visiting') {
+      return false;
+    }
+    const node = nodes.get(id);
+    if (!node) {
+      state.set(id, false);
+      return false;
+    }
+    if (node.kind === 'return') {
+      state.set(id, true);
+      return true;
+    }
+    const next = successors(graph, id);
+    if (next.length === 0) {
+      state.set(id, false);
+      return false;
+    }
+    state.set(id, 'visiting');
+    const reaches = next.every((target) => visit(target));
+    state.set(id, reaches);
+    return reaches;
+  };
+  for (const node of graph.nodes) {
+    visit(node.id);
   }
-  if (node.kind === 'return') {
-    return true;
+  const result = new Map<string, boolean>();
+  for (const [id, value] of state) {
+    result.set(id, value === true);
   }
-  const next = successors(graph, id);
-  if (next.length === 0) {
-    return false;
-  }
-  const nested = new Set(stack);
-  nested.add(id);
-  return next.every((target) => pathReachesReturn(target, graph, nodes, nested));
+  return result;
 }
 
 function computeDominators(graph: Graph): Map<string, Set<string>> {
