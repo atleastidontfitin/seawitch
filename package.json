@@ -8,7 +8,7 @@
   },
   "scripts": {
     "seawitch": "tsx src/cli.ts",
-    "test": "tsx --test test/render.test.ts test/compile.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "typescript": "5.9.3"

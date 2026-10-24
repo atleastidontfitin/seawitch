@@ -365,9 +365,9 @@ These are limitations of this prototype, not language requirements:
 - Joins may be emitted by duplicating the shared tail inside each branch. Only the taken branch runs. A later emitter may structure the same graph differently when the observable call order and results stay the same.
 - The emitter stops if expansion would exceed 2,000 nodes. That guard prevents a pathological diagram from emitting exponential code. It is not a limit on valid Seawitch graphs.
 
-### 13.8 Next example
+### 13.8 Converging example
 
-After Milestone 1 is reviewed, the next example is one function with a structured input, an intermediate call result used by a later call, a boolean decision, a converging path, and a structured output. The source remains ordinary Mermaid. The example is not clinical and is not part of Milestone 1.
+`examples/order/fulfillOrder.sea.mmd` is a non-clinical function with a structured input, intermediate call results, a boolean decision, a converging path, and a structured output. The shared call may use values that dominate the join, including the decision's boolean result. A branch-local result is not a legal argument to that shared call. The source remains ordinary Mermaid. Duplicating the shared tail in the generated TypeScript is a prototype technique; it is not the language rule for joins.
 
 ---
 

@@ -1,0 +1,11 @@
+flowchart TD
+    %% seawitch: function fulfillOrder(order: Order): Receipt
+    %% seawitch: import type { Order, Receipt } from "./types.js"
+    %% seawitch: import { normalize, isExpedited, noteExpedited, noteStandard, receiptFor } from "./orders.js"
+    start["start"] --> normalized["call normalize(order)"]
+    normalized --> expedited{"call isExpedited(normalized)"}
+    expedited -->|true| fast["call noteExpedited(normalized)"]
+    expedited -->|false| regular["call noteStandard(normalized)"]
+    fast --> receipt["call receiptFor(normalized, expedited)"]
+    regular --> receipt
+    receipt --> done["return receipt"]
