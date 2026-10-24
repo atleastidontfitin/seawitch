@@ -160,7 +160,7 @@ The compiler MUST check:
 
 - Imported functions and types resolve.
 - Function calls have valid argument counts and compatible parameter types.
-- Decisions call functions with return type `boolean` (not merely truthy/falsy values).
+- Decision calls return a type assignable to primitive `boolean`. `any`, `unknown`, nullable unions (`null` or `undefined` in the type), and non-boolean types are rejected. A type alias of `boolean` is accepted. The literal type `true` is accepted because it is assignable to `boolean`. Truthy or falsy values of other types are not.
 - Node references satisfy the dominance rule.
 - Every return value is compatible with the declared return type.
 - A call to another Seawitch function is checked by the same rules as a call to a TypeScript function.
@@ -302,6 +302,73 @@ These are design choices for testing, **not evidence that the compiler has alrea
 
 Explicitly out of scope for v0.1: loops, recursion, async/await, native expression evaluation, arbitrary assignments, structured literals, exception handling, visual editing, automatic graph extraction from existing TypeScript, automatic clinical claim tracking, integrated execution tracing, and UI frameworks. They can be proposed individually if real code examples demonstrate enough value.
 
+## 13. Prototype decisions
+
+These decisions are normative for the Milestone 1 prototype. They narrow the draft above where it was ambiguous. They do not add loops, recursion, a visual editor, or a Seawitch runtime.
+
+### 13.1 Flowchart subset
+
+A v0.1 source file is one statement per line. A trailing semicolon is optional. The header direction is `TD`, `TB`, `LR`, `RL`, or `BT`. The only links are `-->`, `-->|true|`, and `-->|false|`. Executable node labels are double-quoted. The entry node `start` has exactly one unlabeled outgoing edge.
+
+The following are compile errors: YAML front matter, chained edges, `&` forks, subgraphs, `click` and `href` statements, and `@{ }` shape syntax. Ordinary `%%` comments are ignored. Unknown `%% seawitch:` directives are errors.
+
+### 13.2 Declarations
+
+A file has exactly one `function` directive. Imports are only:
+
+- `import { A, B } from "./mod.js"`
+- `import type { A, B } from "./mod.js"`
+
+Specifiers are relative. Aliases, wildcards, and default imports are rejected. A `.sea.mmd` import's local name must be that file's declared function. A Seawitch module exports only that function.
+
+The compiler parses `function` and `import` directives with the TypeScript parser (`ts.createSourceFile` on the directive text). It does not implement a second TypeScript grammar. Type text is copied from the TypeScript AST and checked by TypeScript **5.9.3**.
+
+### 13.3 Identifiers and literals
+
+Identifiers are non-reserved TypeScript identifiers. They are not Mermaid statement keywords: `end`, `subgraph`, `graph`, `flowchart`, `click`, `call`, `href`, `style`, `class`, `classDef`, `default`, `linkStyle`, `direction`, `interpolate`. They must not collide with the function name, parameters, imports, or other node ids.
+
+Literals are `true`, `false`, `null`, single-quoted strings with `\\` and `\'` escapes, and optional-minus decimal numbers such as `-1` and `1.5`. `undefined` is not a literal.
+
+A value reference is a parameter, or the id of a call or decision node that strictly dominates the use. Decision nodes bind their boolean result. The entry and return nodes do not produce referenceable values.
+
+### 13.4 Decision types
+
+A decision callee is accepted when its return type is assignable to primitive `boolean` and is not `any`, `unknown`, a nullable union (`null` or `undefined` in the type), or a non-boolean type. A type alias of `boolean` is accepted. The literal type `true` is accepted.
+
+Generic functions, overloads, rest parameters, and `Promise`-returning callees are rejected. Wrap them in a monomorphic synchronous TypeScript adapter.
+
+### 13.5 Mermaid compatibility
+
+The same unmodified `.sea.mmd` bytes must render in a pinned Mermaid release. That render is a conformance test. The compiler does not render diagrams and does not load a DOM. Invalid subset syntax is a Seawitch diagnostic.
+
+The Milestone 1 conformance render uses Mermaid **12.2.0**.
+
+### 13.6 Diagnostics
+
+A diagnostic has the form `CODE file:line [nodeId]: message`. The node id is omitted when the error is not tied to a node. Initial codes:
+
+- `SW010`–`SW015`: syntax and declarations.
+- `SW101`–`SW109`: graph structure. `SW104` is a missing `true` or `false` edge. `SW108` is a cycle in the flowchart.
+- `SW203`: a reference that does not dominate the use.
+- `SW301`: a decision return type that fails the boolean rule.
+- `SW302`: a return value not assignable to the declared return type.
+- `SW303`: an argument count or type mismatch.
+- `SW304`: a generic, overloaded, rest, or asynchronous callee.
+- `SW401`–`SW404`: imports and cycles between Seawitch files.
+
+There is no compiler-stage Mermaid or DOM failure code. A file that is not in the supported subset fails with a syntax diagnostic. Rendering failures are reported by the conformance test.
+
+### 13.7 Prototype limitations
+
+These are limitations of this prototype, not language requirements:
+
+- Joins may be emitted by duplicating the shared tail inside each branch. Only the taken branch runs. A later emitter may structure the same graph differently when the observable call order and results stay the same.
+- The emitter stops if expansion would exceed 2,000 nodes. That guard prevents a pathological diagram from emitting exponential code. It is not a limit on valid Seawitch graphs.
+
+### 13.8 Next example
+
+After Milestone 1 is reviewed, the next example is one function with a structured input, an intermediate call result used by a later call, a boolean decision, a converging path, and a structured output. The source remains ordinary Mermaid. The example is not clinical and is not part of Milestone 1.
+
 ---
 
 ## Appendix A. Minimal syntax summary
@@ -313,7 +380,7 @@ signature:    %% seawitch: function name(arg: Type, ...): ReturnType
 import:       %% seawitch: import { symbol } from "./module.js"
 type import:  %% seawitch: import type { Type } from "./types.js"
 entry:        start["start"]
-call:         node["call helper(arg, ...)"
+call:         node["call helper(arg, ...)"]
 decision:     node{"call predicate(arg, ...)"}
 true edge:    decision -->|true| target
 false edge:   decision -->|false| target

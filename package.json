@@ -1,0 +1,22 @@
+{
+  "name": "seawitch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "seawitch": "./src/cli.ts"
+  },
+  "scripts": {
+    "seawitch": "tsx src/cli.ts",
+    "test": "tsx --test test/render.test.ts test/compile.test.ts"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.9.1",
+    "jsdom": "27.0.1",
+    "mermaid": "12.2.0",
+    "tsx": "4.20.6"
+  }
+}

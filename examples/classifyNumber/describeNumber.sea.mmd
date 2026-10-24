@@ -1,0 +1,6 @@
+flowchart TD
+    %% seawitch: function describeNumber(value: number): Classification
+    %% seawitch: import type { Classification } from "./types.js"
+    %% seawitch: import { classifyNumber } from "./classifyNumber.sea.mmd"
+    start["start"] --> result["call classifyNumber(value)"]
+    result --> done["return result"]

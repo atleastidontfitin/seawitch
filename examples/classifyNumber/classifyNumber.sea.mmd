@@ -1,0 +1,9 @@
+flowchart TD
+    %% seawitch: function classifyNumber(value: number): Classification
+    %% seawitch: import type { Classification } from "./types.js"
+    %% seawitch: import { isNegative, isZero } from "./predicates.js"
+    start["start"] --> negative{"call isNegative(value)"}
+    negative -->|true| negativeResult["return 'negative'"]
+    negative -->|false| zero{"call isZero(value)"}
+    zero -->|true| zeroResult["return 'zero'"]
+    zero -->|false| positiveResult["return 'positive'"]
