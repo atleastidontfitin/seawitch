@@ -79,6 +79,8 @@ export type Graph = {
   imports: ImportDecl[];
   nodes: GraphNode[];
   edges: Edge[];
+  /** Reader-view phrases. Code generation does not read this map. */
+  vocabulary: ReadonlyMap<string, string>;
 };
 
 export type SpanRole = 'decision' | 'call' | 'return' | 'signature';

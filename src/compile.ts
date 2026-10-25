@@ -23,6 +23,19 @@ export type CompileResult = {
 
 export function compile(options: CompileOptions): CompileResult {
   const diagnostics: Diagnostic[] = [];
+  for (const entry of options.entries) {
+    if (!entry.endsWith('.sea.mmd')) {
+      diagnostics.push({
+        code: 'SW010',
+        file: path.basename(entry),
+        line: 1,
+        message: `Seawitch compiles .sea.mmd source only. '${path.basename(entry)}' is not executable input.`,
+      });
+    }
+  }
+  if (diagnostics.length > 0) {
+    return { diagnostics, outputs: [] };
+  }
   const srcRoot = path.resolve(options.srcRoot);
   const outRoot = path.resolve(options.outRoot);
   const graphs = new Map<string, Graph>();

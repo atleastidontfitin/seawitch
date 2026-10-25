@@ -5,6 +5,7 @@ import { parseExpression } from './expression.js';
 import { identifierProblem } from './identifiers.js';
 import { parseCallLabel, parseReturnLabel } from './labels.js';
 import { parseFunctionDirective, parseImportDirective } from './signature.js';
+import { parseVocabularyDirective, resolveVocabulary, type VocabularyDirective } from '../vocabulary.js';
 
 type RawEndpoint = {
   id: string;
@@ -37,6 +38,7 @@ export function parseFile(source: string, filePath: string, srcRoot: string): { 
   let sawFunction = false;
   let signature: Signature | undefined;
   const imports: ImportDecl[] = [];
+  const vocabularyDirectives: VocabularyDirective[] = [];
   const edges: RawEdge[] = [];
   const definitions = new Map<string, { shape: 'rect' | 'diamond'; label: string; line: number }>();
 
@@ -83,6 +85,15 @@ export function parseFile(source: string, filePath: string, srcRoot: string): { 
           diagnostics.push(parsed.diagnostic);
         } else {
           signature = parsed.value;
+        }
+        continue;
+      }
+      if (/^vocabulary(?:\s|$)/.test(body)) {
+        const parsed = parseVocabularyDirective(body, displayFile, lineNumber);
+        if ('diagnostic' in parsed) {
+          diagnostics.push(parsed.diagnostic);
+        } else {
+          vocabularyDirectives.push(parsed.value);
         }
         continue;
       }
@@ -136,6 +147,8 @@ export function parseFile(source: string, filePath: string, srcRoot: string): { 
       message: 'The file is missing a seawitch function directive.',
     });
   }
+  const vocabulary = resolveVocabulary(vocabularyDirectives, filePath, displayFile);
+  diagnostics.push(...vocabulary.diagnostics);
   if (diagnostics.length > 0 || !signature) {
     return { diagnostics };
   }
@@ -228,6 +241,7 @@ export function parseFile(source: string, filePath: string, srcRoot: string): { 
       imports,
       nodes,
       edges: graphEdges,
+      vocabulary: vocabulary.phrases,
     },
   };
 }

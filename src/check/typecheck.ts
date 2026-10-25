@@ -136,6 +136,26 @@ function diagnoseCallee(
   }
 }
 
+export function signatureReturnsPlainBoolean(checker: ts.TypeChecker, signature: ts.Signature): boolean {
+  if ((signature.typeParameters?.length ?? 0) > 0) {
+    return false;
+  }
+  if (signature.parameters.some((parameter) => isRestParameter(parameter))) {
+    return false;
+  }
+  const returnType = checker.getReturnTypeOfSignature(signature);
+  if (containsPromise(returnType)) {
+    return false;
+  }
+  if (hasFlag(returnType, ts.TypeFlags.Any) || hasFlag(returnType, ts.TypeFlags.Unknown)) {
+    return false;
+  }
+  if (hasFlag(returnType, ts.TypeFlags.Null) || hasFlag(returnType, ts.TypeFlags.Undefined)) {
+    return false;
+  }
+  return checker.isTypeAssignableTo(returnType, checker.getBooleanType());
+}
+
 function diagnoseBoolean(
   expression: ts.Node,
   checker: ts.TypeChecker,
