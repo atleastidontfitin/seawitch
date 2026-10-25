@@ -57,16 +57,18 @@ export function typecheck(files: EmittedFile[], outRoot: string): Diagnostic[] {
       continue;
     }
     for (const span of file.spans) {
-      if (span.role !== 'call' && span.role !== 'decision') {
+      if (span.role !== 'call' && span.role !== 'decision' && span.role !== 'return') {
         continue;
       }
-      const call = findCall(sourceFile, span.start, span.end);
-      if (!call) {
+      const expression = findExact(sourceFile, span.start, span.end);
+      if (!expression) {
         continue;
       }
-      diagnoseCallee(call, checker, file, span, diagnostics);
+      for (const call of callsIn(expression)) {
+        diagnoseCallee(call, checker, file, span, diagnostics);
+      }
       if (span.role === 'decision') {
-        diagnoseBoolean(call, checker, file, span, diagnostics);
+        diagnoseBoolean(expression, checker, file, span, diagnostics);
       }
     }
   }
@@ -135,20 +137,21 @@ function diagnoseCallee(
 }
 
 function diagnoseBoolean(
-  call: ts.CallExpression,
+  expression: ts.Node,
   checker: ts.TypeChecker,
   file: EmittedFile,
   span: MappedSpan,
   diagnostics: Diagnostic[],
 ): void {
-  const type = checker.getTypeAtLocation(call);
+  const type = checker.getTypeAtLocation(expression);
+  const subject = ts.isCallExpression(expression) ? 'Decision call must return' : 'Decision expression must be';
   if (hasFlag(type, ts.TypeFlags.Any) || hasFlag(type, ts.TypeFlags.Unknown)) {
     diagnostics.push({
       code: 'SW301',
       file: file.graph.displayFile,
       line: span.line,
       nodeId: span.nodeId,
-      message: `Decision call must return a type assignable to boolean; actual return type is ${checker.typeToString(type)}.`,
+      message: `${subject} a type assignable to boolean; actual return type is ${checker.typeToString(type)}.`,
     });
     return;
   }
@@ -158,7 +161,7 @@ function diagnoseBoolean(
       file: file.graph.displayFile,
       line: span.line,
       nodeId: span.nodeId,
-      message: `Decision call must return a non-nullable boolean; actual return type is ${checker.typeToString(type)}.`,
+      message: `${subject} a non-nullable boolean; actual return type is ${checker.typeToString(type)}.`,
     });
     return;
   }
@@ -168,7 +171,7 @@ function diagnoseBoolean(
       file: file.graph.displayFile,
       line: span.line,
       nodeId: span.nodeId,
-      message: `Decision call must return a type assignable to boolean; actual return type is ${checker.typeToString(type)}.`,
+      message: `${subject} a type assignable to boolean; actual return type is ${checker.typeToString(type)}.`,
     });
   }
 }
@@ -209,13 +212,13 @@ function hasFlag(type: ts.Type, flag: ts.TypeFlags): boolean {
   return type.isUnion() && type.types.some((part) => hasFlag(part, flag));
 }
 
-function findCall(sourceFile: ts.SourceFile, start: number, end: number): ts.CallExpression | undefined {
-  let found: ts.CallExpression | undefined;
+function findExact(sourceFile: ts.SourceFile, start: number, end: number): ts.Node | undefined {
+  let found: ts.Node | undefined;
   const visit = (node: ts.Node): void => {
     if (found) {
       return;
     }
-    if (ts.isCallExpression(node) && node.getStart(sourceFile) === start && node.getEnd() === end) {
+    if (node.getStart(sourceFile) === start && node.getEnd() === end) {
       found = node;
       return;
     }
@@ -223,6 +226,18 @@ function findCall(sourceFile: ts.SourceFile, start: number, end: number): ts.Cal
   };
   visit(sourceFile);
   return found;
+}
+
+function callsIn(node: ts.Node): ts.CallExpression[] {
+  const calls: ts.CallExpression[] = [];
+  const visit = (current: ts.Node): void => {
+    if (ts.isCallExpression(current)) {
+      calls.push(current);
+    }
+    ts.forEachChild(current, visit);
+  };
+  visit(node);
+  return calls;
 }
 
 function spanFor(start: number, end: number, spans: MappedSpan[]): MappedSpan | undefined {

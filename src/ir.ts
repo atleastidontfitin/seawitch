@@ -15,9 +15,38 @@ export type Expr =
 
 export type GraphNode =
   | { kind: 'entry'; id: 'start'; loc: Location }
-  | { kind: 'call'; id: string; callee: string; args: Expr[]; loc: Location }
-  | { kind: 'decision'; id: string; callee: string; args: Expr[]; loc: Location }
-  | { kind: 'return'; id: string; value: Expr; loc: Location };
+  | {
+      kind: 'call';
+      id: string;
+      callee: string;
+      args: Expr[];
+      /** Present when the node label is an expression rather than `call name(args)`. */
+      exprText?: string;
+      exprRefs?: Expr[];
+      callees?: string[];
+      loc: Location;
+    }
+  | {
+      kind: 'decision';
+      id: string;
+      callee: string;
+      args: Expr[];
+      /** Present when the node label is an expression rather than `call name(args)`. */
+      exprText?: string;
+      exprRefs?: Expr[];
+      callees?: string[];
+      loc: Location;
+    }
+  | {
+      kind: 'return';
+      id: string;
+      value: Expr;
+      /** Present when `return` is followed by an expression rather than a single legacy value. */
+      exprText?: string;
+      exprRefs?: Expr[];
+      callees?: string[];
+      loc: Location;
+    };
 
 export type Edge = {
   from: string;

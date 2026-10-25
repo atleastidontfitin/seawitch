@@ -115,22 +115,23 @@ function emitUntil(
       };
     }
     if (node.kind === 'return') {
-      const expression = printExpr(node.value);
+      const expression = node.exprText ? `(${node.exprText})` : printExpr(node.value);
       const statement = `return ${expression}`;
       const prefix = ' '.repeat(indent);
       const start = printer.length + prefix.length;
       printer.write(`${prefix}${statement};\n`);
+      const expressionStart = node.exprText ? start + 'return '.length : start;
       printer.spans.push({
         role: 'return',
-        start,
-        end: start + statement.length,
+        start: expressionStart,
+        end: node.exprText ? expressionStart + expression.length : start + statement.length,
         line: node.loc.line,
         nodeId: node.id,
       });
       return undefined;
     }
     if (node.kind === 'call') {
-      const call = printCall(node.callee, node.args);
+      const call = printOperation(node);
       recordCall(printer, indent, node, call, referenced.has(node.id), 'call');
       const next = graph.edges.find((edge) => edge.from === node.id);
       if (!next) {
@@ -160,7 +161,7 @@ function emitUntil(
         message: "A decision must have a 'true' edge and a 'false' edge.",
       };
     }
-    const call = printCall(node.callee, node.args);
+    const call = printOperation(node);
     if (trueEdge.to === join && falseEdge.to === join) {
       recordCall(printer, indent, node, call, referenced.has(node.id), 'decision');
     } else {
@@ -230,6 +231,13 @@ function recordCall(
     line: node.loc.line,
     nodeId: node.id,
   });
+}
+
+function printOperation(node: Extract<GraphNode, { kind: 'call' | 'decision' }>): string {
+  if (node.exprText) {
+    return `(${node.exprText})`;
+  }
+  return printCall(node.callee, node.args);
 }
 
 function printCall(callee: string, args: Expr[]): string {

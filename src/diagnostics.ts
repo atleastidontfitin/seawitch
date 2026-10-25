@@ -5,6 +5,7 @@ export const DIAGNOSTIC_CODES = [
   'SW013',
   'SW014',
   'SW015',
+  'SW016',
   'SW101',
   'SW102',
   'SW103',

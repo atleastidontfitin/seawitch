@@ -104,14 +104,16 @@ export function validateGraph(graph: Graph): Validation {
     graph.imports.filter((imported) => imported.kind === 'value').flatMap((imported) => imported.names),
   );
   for (const node of graph.nodes) {
-    if ((node.kind === 'call' || node.kind === 'decision') && !valueImports.has(node.callee)) {
-      diagnostics.push({
-        code: 'SW401',
-        file: graph.displayFile,
-        line: node.loc.line,
-        nodeId: node.id,
-        message: `Unknown function '${node.callee}'. Import it before calling it.`,
-      });
+    for (const callee of calleeNames(node)) {
+      if (!valueImports.has(callee)) {
+        diagnostics.push({
+          code: 'SW401',
+          file: graph.displayFile,
+          line: node.loc.line,
+          nodeId: node.id,
+          message: `Unknown function '${callee}'. Import it before calling it.`,
+        });
+      }
     }
   }
 
@@ -197,10 +199,23 @@ export function validateGraph(graph: Graph): Validation {
 
 function expressionsOf(node: GraphNode): Expr[] {
   if (node.kind === 'call' || node.kind === 'decision') {
-    return node.args;
+    return node.exprText ? (node.exprRefs ?? []) : node.args;
   }
   if (node.kind === 'return') {
-    return [node.value];
+    return node.exprText ? (node.exprRefs ?? []) : [node.value];
+  }
+  return [];
+}
+
+function calleeNames(node: GraphNode): string[] {
+  if (node.kind === 'entry') {
+    return [];
+  }
+  if (node.exprText) {
+    return node.callees ?? [];
+  }
+  if (node.kind === 'call' || node.kind === 'decision') {
+    return [node.callee];
   }
   return [];
 }

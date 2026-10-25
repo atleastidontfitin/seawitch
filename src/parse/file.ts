@@ -1,6 +1,7 @@
 import path from 'node:path';
 import type { Diagnostic } from '../diagnostics.js';
 import type { Direction, Edge, Graph, GraphNode, ImportDecl, Location, Signature } from '../ir.js';
+import { parseExpression } from './expression.js';
 import { identifierProblem } from './identifiers.js';
 import { parseCallLabel, parseReturnLabel } from './labels.js';
 import { parseFunctionDirective, parseImportDirective } from './signature.js';
@@ -265,11 +266,7 @@ function buildNode(
 ): GraphNode | Diagnostic {
   const loc: Location = { line: definition.line, column: 1 };
   if (definition.shape === 'diamond') {
-    const call = parseCallLabel(definition.label, loc);
-    if ('message' in call) {
-      return { code: 'SW014', file, line: definition.line, nodeId: id, message: call.message };
-    }
-    return { kind: 'decision', id, callee: call.callee, args: call.args, loc };
+    return buildDecision(id, definition.label, file, loc);
   }
   if (definition.label === 'start') {
     if (id !== 'start') {
@@ -283,26 +280,74 @@ function buildNode(
     }
     return { kind: 'entry', id: 'start', loc };
   }
-  if (definition.label.startsWith('return')) {
-    const parsed = parseReturnLabel(definition.label, loc);
-    if ('message' in parsed) {
-      return { code: 'SW014', file, line: definition.line, nodeId: id, message: parsed.message };
-    }
-    return { kind: 'return', id, value: parsed.value, loc };
+  if (/^return(?:\s|$)/.test(definition.label)) {
+    return buildReturn(id, definition.label, file, loc);
   }
-  if (definition.label.startsWith('call')) {
+  if (/^call(?:\s|$)/.test(definition.label)) {
     const call = parseCallLabel(definition.label, loc);
     if ('message' in call) {
       return { code: 'SW014', file, line: definition.line, nodeId: id, message: call.message };
     }
     return { kind: 'call', id, callee: call.callee, args: call.args, loc };
   }
+  return buildExpression(id, definition.label, file, loc, 'call');
+}
+
+function buildDecision(id: string, label: string, file: string, loc: Location): GraphNode | Diagnostic {
+  if (/^call(?:\s|$)/.test(label)) {
+    const call = parseCallLabel(label, loc);
+    if ('message' in call) {
+      return { code: 'SW014', file, line: loc.line, nodeId: id, message: call.message };
+    }
+    return { kind: 'decision', id, callee: call.callee, args: call.args, loc };
+  }
+  return buildExpression(id, label, file, loc, 'decision');
+}
+
+function buildReturn(id: string, label: string, file: string, loc: Location): GraphNode | Diagnostic {
+  const legacy = parseReturnLabel(label, loc);
+  if (!('message' in legacy)) {
+    return { kind: 'return', id, value: legacy.value, loc };
+  }
+  const operand = /^return\s+([\s\S]+)$/.exec(label)?.[1]?.trim();
+  if (!operand) {
+    return { code: 'SW014', file, line: loc.line, nodeId: id, message: legacy.message };
+  }
+  const parsed = parseExpression(operand, loc);
+  if ('message' in parsed) {
+    return { code: 'SW016', file, line: loc.line, nodeId: id, message: parsed.message };
+  }
   return {
-    code: 'SW014',
-    file,
-    line: definition.line,
-    nodeId: id,
-    message: `Unsupported node label '${definition.label}'.`,
+    kind: 'return',
+    id,
+    value: { kind: 'ref', name: id, loc },
+    exprText: parsed.value.text,
+    exprRefs: parsed.value.refs,
+    callees: parsed.value.callees,
+    loc,
+  };
+}
+
+function buildExpression(
+  id: string,
+  label: string,
+  file: string,
+  loc: Location,
+  kind: 'call' | 'decision',
+): GraphNode | Diagnostic {
+  const parsed = parseExpression(label, loc);
+  if ('message' in parsed) {
+    return { code: 'SW016', file, line: loc.line, nodeId: id, message: parsed.message };
+  }
+  return {
+    kind,
+    id,
+    callee: '',
+    args: [],
+    exprText: parsed.value.text,
+    exprRefs: parsed.value.refs,
+    callees: parsed.value.callees,
+    loc,
   };
 }
 

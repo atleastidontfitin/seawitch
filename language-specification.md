@@ -29,7 +29,8 @@ This document specifies the proposed first release. Its examples are intended to
 ### 1.3 Non-goals
 
 - Replacing TypeScript or its ecosystem.
-- Native loops, recursion, assignments, operators, arrays, object constructors, pattern matching, exceptions, asynchronous execution, or mutable variables.
+- A general statement language. The optional expression subset in section 13.9 does not add assignments, loops, or an effect system.
+- Native loops, recursion, assignments, arrays, object constructors, pattern matching, exceptions, asynchronous execution, or mutable variables.
 - A drag-and-drop editor or graphical source-of-truth format.
 - Arbitrary Mermaid diagrams becoming executable automatically.
 - Automatic proof of the clinical or domain correctness of a rule.
@@ -40,8 +41,8 @@ Each `*.sea.mmd` file defines **exactly one function** with:
 
 1. A name, zero or more **typed** inputs, and exactly one **typed** output.
 2. One entry node.
-3. Zero or more **call nodes**, each invoking a named function.
-4. Zero or more **decision nodes**, each invoking a function that returns `boolean`.
+3. Zero or more **call nodes**, each invoking a named function or evaluating one expression from the subset in section 13.9.
+4. Zero or more **decision nodes**, each invoking a function that returns `boolean` or evaluating one boolean expression from that subset.
 5. One or more **return nodes**.
 
 The flowchart describes the **order of execution**, not dataflow. Outputs of function calls are immutable values bound to their node identifiers. Calls are performed only when execution reaches their node. Every execution path MUST eventually reach a return node, assuming called functions terminate and do not throw.
@@ -81,7 +82,7 @@ In v0.1:
 - Imports from `.sea.mmd` resolve to generated Seawitch TypeScript modules; imports from ordinary `.js` module specifiers use TypeScript's normal source-to-output module resolution.
 - Types are TypeScript type annotations, validated by the TypeScript checker. The v0.1 compiler need not implement an independent type language.
 
-No instruction-bearing syntax is added outside valid Mermaid comments and quoted node labels.
+Declarations live in `%% seawitch:` comments. The executable source for a node is its quoted label. There is no second representation of the same operation.
 
 ### 3.3 Required example dependencies
 
@@ -117,14 +118,16 @@ This is a semantic equivalence illustration. Generated formatting and variable n
 
 ## 4. Executable node types
 
-A conforming compiler recognizes the following **node IDs, shapes, and exact label prefixes**. IDs MUST be valid TypeScript identifier tokens and MUST be unique within the graph; they MUST NOT collide with parameter or imported symbol names.
+A conforming compiler recognizes the following **node IDs, shapes, and labels**. The label is the only executable source for that node. IDs MUST be valid TypeScript identifier tokens and MUST be unique within the graph; they MUST NOT collide with parameter or imported symbol names.
 
-| Node | Mermaid shape | Required label | Behavior |
+| Node | Mermaid shape | Label | Behavior |
 | --- | --- | --- | --- |
 | Entry | Rectangle | `start` | Begins function evaluation; ID MUST be `start` |
-| Call | Rectangle | `call functionName(arg1, arg2)` | Calls function, binds output to the node ID, follows its one successor |
-| Decision | Diamond | `call predicateName(arg1, arg2)` | Calls Boolean function; follows exactly one `true` or `false` edge |
-| Return | Rectangle | `return value` | Returns literal, parameter, or available node result; no successor |
+| Computation | Rectangle | an expression from section 13.9, or `call functionName(arg1, arg2)` | Evaluates the expression or call, binds the result to the node ID, follows its one successor |
+| Decision | Diamond | a boolean expression from section 13.9, or `call predicateName(arg1, arg2)` | Evaluates the expression or call; follows exactly one `true` or `false` edge |
+| Return | Rectangle | `return <expression>` | Returns the expression; no successor |
+
+`call name(args)` remains valid. New graphs SHOULD write the call as an expression, `name(args)`, so the diagram shows the same text TypeScript will run. A `return` whose operand is a parameter, a node id, or a literal uses that operand directly. Any other operand is an expression from section 13.9.
 
 Node IDs, shapes, and executable labels carry semantics; visual style, graph direction, and layout do not. The entry node MUST be a rectangle named `start` with label `start` and no incoming edges. It MUST have exactly one outgoing edge unless it is the only executable node in an explicitly supported future extension; v0.1 does not permit such empty functions.
 
@@ -142,9 +145,9 @@ Each call supplies a comma-separated list of arguments in the same order as the 
 - The node ID of a previously evaluated call or decision.
 - A primitive literal: a single-quoted string, decimal number, `true`, `false`, or `null`.
 
-**Not** valid v0.1 arguments: arbitrary expressions such as `a + b`, property access such as `exposure.date`, object/array literals, method calls, lambdas, or conditional expressions. Write a TypeScript helper function for these operations instead.
+The `call name(args)` form accepts only that argument grammar. Property access, comparisons, and other expressions belong in the subset in section 13.9, written directly as the node label.
 
-A return node uses the same single-value grammar. Its value MUST be assignable to the function's declared output type. Return nodes do not call functions implicitly.
+A return of a parameter, node id, or literal uses that value. A return of any other expression uses section 13.9. The value MUST be assignable to the function's declared output type.
 
 ### 5.2 Node results and control-flow merges
 
@@ -160,7 +163,7 @@ The compiler MUST check:
 
 - Imported functions and types resolve.
 - Function calls have valid argument counts and compatible parameter types.
-- Decision calls return a type assignable to primitive `boolean`. `any`, `unknown`, nullable unions (`null` or `undefined` in the type), and non-boolean types are rejected. A type alias of `boolean` is accepted. The literal type `true` is accepted because it is assignable to `boolean`. Truthy or falsy values of other types are not.
+- Decision calls and decision expressions have a type assignable to primitive `boolean`. `any`, `unknown`, nullable unions (`null` or `undefined` in the type), and non-boolean types are rejected. A type alias of `boolean` is accepted. The literal type `true` is accepted because it is assignable to `boolean`. Truthy or falsy values of other types are not.
 - Node references satisfy the dominance rule.
 - Every return value is compatible with the declared return type.
 - A call to another Seawitch function is checked by the same rules as a call to a TypeScript function.
@@ -170,9 +173,9 @@ Overloads, generic function declarations, rest parameters, and asynchronous/Prom
 ## 6. Execution semantics
 
 1. The generated function receives its arguments, then starts at the entry node.
-2. Upon reaching a call node, evaluate its arguments as already available values, call the named function **once**, bind the result to that node ID, and continue to the sole successor.
-3. Upon reaching a decision node, call its named Boolean function **once**, then follow the matching labeled edge.
-4. Upon reaching a return node, evaluate its single operand and immediately return it.
+2. Upon reaching a call node, evaluate its legacy call or its expression **once**, bind the result to that node ID, and continue to the sole successor.
+3. Upon reaching a decision node, evaluate its legacy Boolean call or its boolean expression **once**, then follow the matching labeled edge.
+4. Upon reaching a return node, evaluate its single operand or its expression and immediately return it.
 5. Nodes not on the selected execution path MUST NOT execute.
 6. If a called function throws, the exception propagates normally to the caller; v0.1 adds no catch/finally semantics.
 
@@ -208,7 +211,7 @@ Here `deriveRisk` is Seawitch-defined and `composeAssessment` is TypeScript-defi
 A conforming compiler MUST:
 
 1. Read and validate the file as Mermaid flowchart syntax against a **documented, pinned Mermaid version**.
-2. Parse only the explicit Seawitch subset and extract directives, nodes, and edges. It MUST NOT infer executable behavior from arbitrary prose labels.
+2. Parse only the explicit Seawitch subset and extract declarations, nodes, and edges. A node's executable meaning is its label.
 3. Construct a typed intermediate representation of the control-flow graph.
 4. Resolve imports and build the graph-to-graph dependency graph.
 5. Verify shape, graph structure, branch completeness, acyclicity, reachability, dominance, and return completeness.
@@ -291,7 +294,7 @@ Only after this milestone should the team attempt a production WhatNext.Health d
 The following are specified provisionally for v0.1 but should be evaluated through implementation rather than accepted as permanently optimal:
 
 1. **Metadata in `%% seawitch:` comments.** Preserves stock Mermaid compatibility while keeping signature and imports with the diagram.
-2. **Meaning in node labels.** Keeps authoring terse, but requires robust parsing of quoted text. An alternate syntax could use metadata comments keyed by node ID.
+2. **Meaning in node labels.** The quoted label is the expression, call, or return that runs. The diagram shows the same text that determines execution.
 3. **No branch-merge value selection.** Separate returns and helper calls keep the semantics small; real examples may justify a narrowly scoped merge construct later.
 4. **Strict synchronous and acyclic graph subset.** Easy to validate, but intentionally does not address every possible algorithm.
 5. **Dependency resolution through explicit imports.** Keeps name resolution deterministic and aligns with ordinary TypeScript conventions.
@@ -300,7 +303,7 @@ These are design choices for testing, **not evidence that the compiler has alrea
 
 ## 12. Deferred capabilities
 
-Explicitly out of scope for v0.1: loops, recursion, async/await, native expression evaluation, arbitrary assignments, structured literals, exception handling, visual editing, automatic graph extraction from existing TypeScript, automatic clinical claim tracking, integrated execution tracing, and UI frameworks. They can be proposed individually if real code examples demonstrate enough value.
+Explicitly out of scope for v0.1: loops, recursion, async/await, expressions outside the subset in section 13.9, arbitrary assignments, structured literals, exception handling, visual editing, automatic graph extraction from existing TypeScript, automatic clinical claim tracking, integrated execution tracing, and UI frameworks. They can be proposed individually if real code examples demonstrate enough value.
 
 ## 13. Prototype decisions
 
@@ -348,6 +351,7 @@ The Milestone 1 conformance render uses Mermaid **12.2.0**.
 A diagnostic has the form `CODE file:line [nodeId]: message`. The node id is omitted when the error is not tied to a node. Initial codes:
 
 - `SW010`–`SW015`: syntax and declarations.
+- `SW016`: a node label whose expression is outside the subset in section 13.9.
 - `SW101`–`SW109`: graph structure. `SW104` is a missing `true` or `false` edge. `SW108` is a cycle in the flowchart. `SW103` means structured emission still had to duplicate a region and stopped after 2,000 nodes.
 - `SW203`: a reference that does not dominate the use.
 - `SW301`: a decision return type that fails the boolean rule.
@@ -370,6 +374,25 @@ If that fallback would emit more than 2,000 nodes, compilation stops with `SW103
 
 `examples/order/fulfillOrder.sea.mmd` is a non-clinical function with a structured input, intermediate call results, a boolean decision, a converging path, and a structured output. The shared call may use values that dominate the join, including the decision's boolean result. A branch-local result is not a legal argument to that shared call. The source remains ordinary Mermaid. The generated function emits the shared call once, after the conditional.
 
+### 13.9 Expression labels
+
+A diamond label that does not use `call name(args)` is a boolean expression. A rectangle label that is not `start`, `return <value>`, or `call name(args)` is an expression whose result is bound to the node id. A return may also be `return <expression>` when the operand is not a single parameter, node id, or literal.
+
+The expression is the label text. The compiler parses it with the TypeScript parser and then checks this subset:
+
+- An identifier in scope: a parameter, an import used as a callee, or a dominating node result.
+- Property access with `.`, and a call or method call.
+- Prefix `!`, parentheses, and the operators `===`, `!==`, `<`, `<=`, `>`, `>=`, `&&`, and `||`.
+- A single-quoted string, a decimal number including a leading minus on that number, `true`, `false`, or `null`.
+
+`&&` and `||` keep TypeScript's short-circuit evaluation because the compiler emits the expression text. A conditional expression is rejected so each alternative stays a flowchart branch.
+
+The subset does not guarantee purity. A function or method call inside an expression may have side effects, just as a legacy Seawitch call may. There is no effect system. Explicitly mutating syntax is rejected, including assignment, update, `delete`, `new`, `await`, `yield`, `void`, `typeof`, the comma operator, postfix `++` and `--`, optional chaining, non-null assertions, `as`, `satisfies`, object and array literals, template literals, arrows, generic type arguments, and spread.
+
+Loose equality is rejected. An expression uses `===` or `!==`, not `==` or `!=`.
+
+A bare function name used as a callee MUST be a value import. A method name is not an import. Calls inside the expression are checked by the same callee rules as a legacy call, including the rejection of generic, overloaded, rest, and `Promise` callees. Identifiers that are not callees follow the dominance rule. The compiler emits the original expression text in parentheses. It does not pretty-print it.
+
 ---
 
 ## Appendix A. Minimal syntax summary
@@ -381,11 +404,13 @@ signature:    %% seawitch: function name(arg: Type, ...): ReturnType
 import:       %% seawitch: import { symbol } from "./module.js"
 type import:  %% seawitch: import type { Type } from "./types.js"
 entry:        start["start"]
-call:         node["call helper(arg, ...)"]
-decision:     node{"call predicate(arg, ...)"}
+computation:  node["expression"]
+decision:     node{"boolean expression"}
 true edge:    decision -->|true| target
 false edge:   decision -->|false| target
-return:       node["return value"]
+return:       node["return expression"]
+legacy call:  node["call helper(arg, ...)"]
+legacy test:  node{"call predicate(arg, ...)"}
 ```
 
 All these declarations are interpreted only where the full source also satisfies the supported Mermaid flowchart subset. This appendix is a summary, not a separate grammar.
