@@ -1,0 +1,7 @@
+flowchart TD
+    %% seawitch: function describeWindow(sample: Sample): string
+    %% seawitch: import type { Sample } from "./types.js"
+    start["start"] --> late{"sample.window === 'late'"}
+    late -->|true| closed["return 'closed'"]
+    late -->|false| leaf["sample.leaf"]
+    leaf --> open["return leaf"]
