@@ -2,7 +2,7 @@
 
 Seawitch compiles a Mermaid flowchart into a TypeScript function. The `.sea.mmd` file is the source of the function: the same text renders in ordinary Mermaid and compiles to TypeScript. Generated code calls ordinary TypeScript functions and other Seawitch functions. There is no Seawitch runtime.
 
-A flowchart expresses control flow only: calls, boolean decisions, and returns. Other computation stays in TypeScript.
+A flowchart expresses control flow: boolean decisions, expressions, calls, and returns. Assignments, loops, and other statements stay in TypeScript.
 
 The language rules are in [language-specification.md](language-specification.md). This repository is the v0.1 compiler.
 
@@ -73,8 +73,10 @@ The suite compiles the examples, runs the generated functions, checks diagnostic
 
 One function per file. The signature and imports are `%% seawitch:` comments, so Mermaid ignores them. Imports are relative `import { ... } from "./mod.js"` and `import type { ... } from "./mod.js"`.
 
-A call node is `id["call helper(arg, ...)"]`. A decision is `id{"call predicate(arg)"}` with `-->|true|` and `-->|false|` edges. A return is `id["return value"]`. Arguments are parameters, earlier node ids, and literals.
+A decision is `id{"expression"}` with `-->|true|` and `-->|false|` edges. A computation is `id["expression"]`, and its result is available under that id. A return is `id["return expression"]`. The label is the code that runs. The expression subset allows property reads, calls, `!`, comparisons with `===` and `!==`, and `&&` / `||`. Calls in that subset may have side effects. `==`, `!=`, assignments, and ternary expressions are rejected.
 
-The flowchart is acyclic. Every path reaches a return. Decisions must return a real boolean. Generics, overloads, rest parameters, and `Promise` results are rejected at the boundary; wrap those in a normal TypeScript function.
+`id["call helper(arg, ...)"]` and `id{"call predicate(arg)"}` still compile. New graphs should write `helper(arg)` in the label instead. Arguments in the `call` form are parameters, earlier node ids, and literals. Section 13.9 of the specification is the expression subset.
 
-Loops, recursion, assignments, and other expression syntax are outside the language. Some acyclic graphs are not a single join: a node reached by crossing branches is copied into each path in the generated TypeScript, and only the taken copy runs. Section 13.7 of the specification describes that case and the `SW103` size guard.
+The flowchart is acyclic. Every path reaches a return. Decisions must be a real boolean. Generics, overloads, rest parameters, and `Promise` results are rejected at the boundary; wrap those in a normal TypeScript function.
+
+Loops, recursion, and assignments stay outside the language. Some acyclic graphs are not a single join: a node reached by crossing branches is copied into each path in the generated TypeScript, and only the taken copy runs. Section 13.7 of the specification describes that case and the `SW103` size guard.
